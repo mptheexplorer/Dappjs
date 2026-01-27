@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>WalletConnect Mobile Login</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+
+  <!-- WalletConnect v2 -->
+  <script src="https://unpkg.com/@walletconnect/sign-client@2.3.0/dist/umd/index.min.js"></script>
+
+  <!-- ethers v6 -->
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.10.0/dist/ethers.umd.min.js"></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 24px;
+    }
+    button {
+      padding: 14px 20px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    .status {
+      margin-top: 16px;
+      word-break: break-all;
+    }
+  </style>
+</head>
+
+<body>
+
+  <h2>Mobile Wallet Login</h2>
+  <button id="connectBtn">Connect Wallet</button>
+
+  <div class="status" id="status"></div>
+
+<script>
+let signClient;
+let session;
+
+/* -----------------------------
+   1. Init WalletConnect
+----------------------------- */
+async function initWalletConnect() {
+  signClient = await WalletConnectSignClient.SignClient.init({
+    projectId: "YOUR_WALLETCONNECT_PROJECT_ID",
+    metadata: {
+      name: "My Mobile DApp",
+      description: "WalletConnect Mobile Login",
+      url: "https://mydapp.com",
+      icons: ["https://mydapp.com/icon.png"]
+    }
+  });
+
+  // iOS-safe listeners
+  signClient.on("session_update", ({ session }) => {
+    onSessionConnected(session);
+  });
+
+  signClient.on("session_delete", () => {
+    document.getElementById("status").innerText = "Disconnected";
+  });
+}
+
+initWalletConnect();
+
+/* -----------------------------
+   2. Connect Wallet (Mobile-first)
+----------------------------- */
+document.getElementById("connectBtn").onclick = async () => {
+  const { uri, approval } = await signClient.connect({
+    requiredNamespaces: {
+      eip155: {
+        methods: ["personal_sign"],
+        chains: ["eip155:1"],
+        events: ["accountsChanged", "chainChanged"]
+      }
+    }
+  });
+
+  if (uri) {
+    // ✅ Mobile-first universal WalletConnect link
+    window.location.href = uri;
+  }
+
+  // Desktop + fallback
+  session = await approval();
+  onSessionConnected(session);
+};
+
+/* -----------------------------
+   3. Handle Connected Session
+----------------------------- */
+function onSessionConnected(session) {
+  const accounts = session.namespaces.eip155.accounts;
+  const address = accounts[0].split(":")[2];
+
+  document.getElementById("status").innerHTML =
+    `<b>Connected:</b><br>${address}`;
+
+  // Optional: Authenticate
+  signMessage();
+}
+
+/* -----------------------------
+   4. Sign Message (Authentication)
+----------------------------- */
+async function signMessage() {
+  const provider = new ethers.BrowserProvider({
+    request: async ({ method, params }) => {
+      return signClient.request({
+        topic: session.topic,
+        chainId: "eip155:1",
+        request: { method, params }
+      });
+    }
+  });
+
+  const signer = await provider.getSigner();
+  const message = "Login to My Mobile DApp";
+  const signature = await signer.signMessage(message);
+
+  console.log("Signature:", signature);
+}
+</script>
+
+</body>
+</html>
